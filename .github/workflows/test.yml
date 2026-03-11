@@ -1,0 +1,66 @@
+name: API tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create .env file
+        run: |
+          echo "API_HTTP_CLIENT.URL=${{ secrets.API_BASE_URL || 'https://api.example.com' }}" >> .env
+          echo "API_HTTP_CLIENT.TIMEOUT=30" >> .env
+
+      - name: Run template tests and generate Allure results
+        run: |
+          pytest -m template --alluredir=allure-results
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results
+
+  publish-report:
+    if: always()
+    needs: [run-tests]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Allure results
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results
+
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline
+
+      - name: Generate Allure report
+        run: allure generate allure-results -o allure-report --clean
+
+      - name: Deploy report to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: allure-report

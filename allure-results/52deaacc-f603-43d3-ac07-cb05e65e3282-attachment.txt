@@ -1,0 +1,15 @@
+[32mINFO    [0m HTTP_CLIENT:event_hooks.py:15 Make POST request to https://api.sampleapis.com/fakebank/accounts
+[32mINFO    [0m HTTP_CLIENT:event_hooks.py:24 Got response 201 Created from https://api.sampleapis.com/fakebank/accounts
+[32mINFO    [0m HTTP_CLIENT:event_hooks.py:15 Make GET request to https://api.sampleapis.com/fakebank/accounts/N_Jg4Gs
+[32mINFO    [0m HTTP_CLIENT:event_hooks.py:24 Got response 200 OK from https://api.sampleapis.com/fakebank/accounts/N_Jg4Gs
+[32mINFO    [0m BASE_ASSERTIONS:base.py:19 Check that response status code equals to 200
+[32mINFO    [0m OPERATIONS_ASSERTIONS:operations.py:37 Check operation
+[32mINFO    [0m BASE_ASSERTIONS:base.py:38 Check that "id" equals to N_Jg4Gs
+[32mINFO    [0m BASE_ASSERTIONS:base.py:38 Check that "debit" equals to None
+[32mINFO    [0m BASE_ASSERTIONS:base.py:38 Check that "credit" equals to None
+[32mINFO    [0m BASE_ASSERTIONS:base.py:38 Check that "category" equals to fuel
+[32mINFO    [0m BASE_ASSERTIONS:base.py:38 Check that "description" equals to Plant energy challenge per response.
+[32mINFO    [0m BASE_ASSERTIONS:base.py:38 Check that "transaction_date" equals to 2026-02-28
+[32mINFO    [0m SCHEMA_ASSERTIONS:schema.py:24 Validating JSON schema
+[32mINFO    [0m HTTP_CLIENT:event_hooks.py:15 Make DELETE request to https://api.sampleapis.com/fakebank/accounts/N_Jg4Gs
+[32mINFO    [0m HTTP_CLIENT:event_hooks.py:24 Got response 200 OK from https://api.sampleapis.com/fakebank/accounts/N_Jg4Gs

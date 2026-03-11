@@ -1,0 +1,25 @@
+# Секреты                                                                                                                                                    
+  .env                                                                                                                                                         
+                                                                                                                                                               
+  # Python                   
+  __pycache__/                                                                                                                                                 
+  *.pyc                                                     
+  *.pyo                                                                                                                                                        
+  .venv/                                                                                                                                                       
+  venv/                                                                                                                                                        
+                                                                                                                                                               
+  # Pytest                                                                                                                                                     
+  .pytest_cache/
+
+  # Allure
+  allure-results/
+  allure-report/
+
+  # IDE
+  .idea/
+  .vscode/
+
+  # Node (faker)
+  node_modules/
+
+  allure-results/
