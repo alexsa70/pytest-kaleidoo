@@ -80,7 +80,7 @@ users: Тесты для users endpoint.
 
 ## 5. `config/settings.py` — добавь поле в `APISettings` (если нужен ID из `.env`)
 
-Если тест требует ID или другой конфиг из `.env` (например, `USER_ID`), добавь поле в `Settings`:
+Если тест требует ID или другой конфиг из `.env` (например, `USER_ID`), добавь поле в `APISettings`:
 
 ```python
 # config/settings.py
@@ -95,11 +95,11 @@ ENVIRONMENT=local
 USER_ID=12345
 ```
 
-> Не хардкодь ID прямо в тесте — выноси в `.env` через `Settings`.
+> Не хардкодь ID прямо в тесте — выноси в `.env` через `APISettings`.
 
 ---
 
-## 6. `tests/test_users.py` — напиши тест
+## 6. `tests/api/users/test_users.py` — напиши тест
 
 ```python
 from http import HTTPStatus
@@ -114,6 +114,7 @@ from schema.users import UserRetrieveSchema, UsersResponseSchema
 
 
 @pytest.mark.users
+@pytest.mark.api
 @pytest.mark.integration
 class TestUsers:
     @allure.title("Users: retrieve user by id")
@@ -138,11 +139,34 @@ class TestUsers:
 
 ---
 
+## 7. (Опционально) `tests/api/rbac/policy/<domain>.py` — добавь RBAC правило
+
+Если endpoint зависит от роли пользователя, добавь правило в RBAC-матрицу:
+
+```python
+from schema.rbac import AccessRule
+
+ACCESS_POLICY_USERS = [
+    AccessRule(
+        name="Users: retrieve by id",
+        method="GET",
+        path="/users/{id}",
+        allowed_roles=["super_admin", "admin"],
+        denied_roles=["user"],
+        expected_allowed_status=200,
+        expected_denied_status=403,
+    ),
+]
+```
+
+---
+
 ## Чеклист
 
-- [ ] `tools/routes.py` — маршрут добавлен
+- [ ] `tools/routes/<domain>.py` — маршрут добавлен
 - [ ] `schema/<domain>.py` — схемы запроса и ответа созданы
 - [ ] `clients/operations_client.py` — метод добавлен с `token: str` и `Authorization` заголовком
 - [ ] `pytest.ini` — маркер зарегистрирован
 - [ ] `config/settings.py` + `.env` — ID вынесен в конфиг (не хардкод в тесте)
-- [ ] `tests/test_<domain>.py` — тест с `@pytest.mark.integration`, `settings`, `auth_token`
+- [ ] `tests/api/<domain>/test_<domain>.py` — тест с `@pytest.mark.api` и `@pytest.mark.integration`
+- [ ] `tests/api/rbac/policy/<domain>.py` — добавлено RBAC-правило для endpoint (если есть ограничения по ролям)

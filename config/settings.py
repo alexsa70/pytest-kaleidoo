@@ -49,6 +49,9 @@ class APISettings(ProjectSettings):
     profile: Literal["api"] = "api"
     api_http_client: HTTPClientConfig
     auth_credentials: Optional[AuthCredentialsConfig] = None
+    auth_credentials_super_admin: Optional[AuthCredentialsConfig] = None
+    auth_credentials_admin: Optional[AuthCredentialsConfig] = None
+    auth_credentials_user: Optional[AuthCredentialsConfig] = None
 
     # Org-specific config (вынесено из тестов)
     org_role_id: Optional[str] = None
