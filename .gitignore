@@ -20,6 +20,6 @@
   .vscode/
 
   # Node (faker)
-  node_modules/
+node_modules/
 
-  allure-results/
+allure-results/

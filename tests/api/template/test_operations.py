@@ -3,11 +3,12 @@ from http import HTTPStatus
 import allure
 import pytest
 
-from clients.operations_client import ResourceClient
+from clients.operations_client import APIClient
 from schema.operations import CreateResourceSchema
 from tools.assertions.base import assert_status_code
 
 
+@pytest.mark.api
 @pytest.mark.template
 class TestResourceTemplate:
     @allure.title("Template: local schema check")
@@ -20,7 +21,7 @@ class TestResourceTemplate:
     @pytest.mark.integration
     @pytest.mark.skip(reason="Шаблонный тест. Настройте .env и endpoint под ваш API.")
     @allure.title("Template: list resources")
-    async def test_list_resources(self, resource_client: ResourceClient) -> None:
-        response = await resource_client.list_resources_api()
+    async def test_list_resources(self, api_client: APIClient) -> None:
+        response = await api_client.get("/resources")
 
         assert_status_code(response.status_code, HTTPStatus.OK)

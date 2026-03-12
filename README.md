@@ -29,11 +29,17 @@ cp .env.example .env
 
 ## Конфигурация
 
-`.env` использует вложенные переменные:
+`.env` использует вложенные переменные и единые ключи окружений:
 
 ```env
+PROFILE=api
+ENVIRONMENT=local
 API_HTTP_CLIENT.URL=https://api.example.com
 API_HTTP_CLIENT.TIMEOUT=30
+AUTH_CREDENTIALS.EMAIL=user@example.com
+AUTH_CREDENTIALS.PASSWORD=supersecret
+ORG_ROLE_ID=507f1f77bcf86cd799439022
+E2E_BASE_URL=https://app.example.com
 ```
 
 ## Запуск
@@ -51,6 +57,16 @@ python -m pytest tests/ -m integration
 # Allure
 python -m pytest tests/ --alluredir=allure-results
 allure serve allure-results
+```
+
+### Запуск по профилю
+
+```bash
+# API-профиль
+PROFILE=api python -m pytest tests/api -m "api and integration"
+
+# E2E-профиль
+PROFILE=e2e python -m pytest tests/e2e -m e2e
 ```
 
 ## Что уже есть в каркасе

@@ -1,49 +1,77 @@
 from __future__ import annotations
 
+import io
+from typing import Optional
+
 import allure
 from httpx import Response
 
 from clients.base_client import BaseClient
-from schema.operations import CreateResourceSchema, ResourceSchema, UpdateResourceSchema
-from tools.routes import APIRoutes
+from schema.operations import (
+    AuthenticateRequestSchema,
+    SSOLoginRequestSchema,
+    ResetPasswordRequestSchema,
+)
+from schema.organizations import CreateOrgRequestSchema
+from tools.routes import AuthRoutes, OrgRoutes
 
 
-class ResourceClient(BaseClient):
-    """Шаблонный асинхронный клиент для CRUD-операций с ресурсом."""
+class APIClient(BaseClient):
+    """Основной клиент Kaleidoo API."""
 
-    @allure.step("Get resources list")
-    async def list_resources_api(self) -> Response:
-        return await self.get(APIRoutes.RESOURCES)
+    # ── Authentication ─────────────────────────────────────────────────────
 
-    @allure.step("Get resource by id {resource_id}")
-    async def get_resource_api(self, resource_id: str | int) -> Response:
-        return await self.get(f"{APIRoutes.RESOURCES}/{resource_id}")
-
-    @allure.step("Create resource")
-    async def create_resource_api(self, payload: CreateResourceSchema) -> Response:
+    @allure.step("Auth: authenticate")
+    async def authenticate_api(self, payload: AuthenticateRequestSchema) -> Response:
         return await self.post(
-            APIRoutes.RESOURCES,
-            json=payload.model_dump(mode="json", by_alias=True),
+            AuthRoutes.AUTHENTICATE,
+            json=payload.model_dump(exclude_none=True),
         )
 
-    @allure.step("Update resource by id {resource_id}")
-    async def update_resource_api(
+    @allure.step("Auth: SSO login via {payload.provider}")
+    async def sso_login(self, payload: SSOLoginRequestSchema) -> Response:
+        return await self.post(
+            AuthRoutes.SSO_LOGIN,
+            json=payload.model_dump(exclude_none=True),
+        )
+
+    @allure.step("Auth: reset password for {payload.email}")
+    async def reset_password(self, payload: ResetPasswordRequestSchema) -> Response:
+        return await self.post(
+            AuthRoutes.RESET_PASSWORD,
+            json=payload.model_dump(exclude_none=True),
+        )
+
+    # ── Organizations ──────────────────────────────────────────────────────
+
+    @allure.step("Org: create organization '{payload.org_name}'")
+    async def create_org(
         self,
-        resource_id: str | int,
-        payload: UpdateResourceSchema,
+        payload: CreateOrgRequestSchema,
+        token: str,
+        logo: Optional[bytes] = None,
+        logo_filename: str = "logo.png",
+        logo_content_type: str = "image/png",
     ) -> Response:
-        return await self.patch(
-            f"{APIRoutes.RESOURCES}/{resource_id}",
-            json=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+        """multipart/form-data. permissions сериализуется в JSON-строку."""
+        data: dict = payload.model_dump(
+            exclude_none=True,
+            exclude={"permissions", "supported_languages"},
         )
 
-    @allure.step("Delete resource by id {resource_id}")
-    async def delete_resource_api(self, resource_id: str | int) -> Response:
-        return await self.delete(f"{APIRoutes.RESOURCES}/{resource_id}")
+        if payload.permissions is not None:
+            data["permissions"] = payload.permissions.model_dump_json(exclude_none=True)
 
-    async def create_resource(self) -> ResourceSchema:
-        """Вспомогательный метод для создания сущности из дефолтного payload."""
+        if payload.supported_languages is not None:
+            data["supported_languages"] = payload.supported_languages
 
-        payload = CreateResourceSchema()
-        response = await self.create_resource_api(payload)
-        return ResourceSchema.model_validate_json(response.text)
+        files = None
+        if logo is not None:
+            files = {"logo": (logo_filename, io.BytesIO(logo), logo_content_type)}
+
+        return await self.post(
+            OrgRoutes.ORG_CREATE,
+            data=data,
+            files=files,
+            headers={"Authorization": f"Bearer {token}"},
+        )

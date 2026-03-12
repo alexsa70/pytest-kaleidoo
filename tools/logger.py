@@ -11,13 +11,14 @@ def get_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)  # Устанавливаем уровень логирования
 
-    handler = logging.StreamHandler()  # Создаем обработчик вывода в консоль
-    handler.setLevel(logging.DEBUG)  # Устанавливаем уровень для обработчика
+    if not logger.handlers:  # Добавляем обработчик только если его ещё нет
+        handler = logging.StreamHandler()  # Создаем обработчик вывода в консоль
+        handler.setLevel(logging.DEBUG)  # Устанавливаем уровень для обработчика
 
-    # Формат логов: время | имя логгера | уровень логирования | сообщение
-    formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(message)s')
-    handler.setFormatter(formatter)
+        # Формат логов: время | имя логгера | уровень логирования | сообщение
+        formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(message)s')
+        handler.setFormatter(formatter)
 
-    logger.addHandler(handler)  # Добавляем обработчик к логгеру
+        logger.addHandler(handler)  # Добавляем обработчик к логгеру
 
     return logger

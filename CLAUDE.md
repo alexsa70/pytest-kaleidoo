@@ -36,8 +36,8 @@ allure serve allure-results
   - содержит методы `get`, `post`, `patch`, `delete`
 
 - `clients/operations_client.py`
-  - шаблонный доменный клиент `ResourceClient`
-  - содержит CRUD-методы для `APIRoutes.RESOURCES`
+  - доменный клиент `APIClient`
+  - использует маршруты из `tools/routes/` по доменам
 
 - `fixtures/settings.py`
   - сессионная фикстура `settings`
@@ -53,11 +53,17 @@ allure serve allure-results
 
 Настройки загружаются из `.env` через `pydantic-settings`.
 
-Используемые переменные:
+Единые переменные окружения:
 
 ```env
+PROFILE=api
+ENVIRONMENT=local
 API_HTTP_CLIENT.URL=https://api.example.com
 API_HTTP_CLIENT.TIMEOUT=30
+AUTH_CREDENTIALS.EMAIL=user@example.com
+AUTH_CREDENTIALS.PASSWORD=supersecret
+ORG_ROLE_ID=507f1f77bcf86cd799439022
+E2E_BASE_URL=https://app.example.com
 ```
 
 ## pytest
