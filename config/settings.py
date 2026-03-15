@@ -19,6 +19,7 @@ class HTTPClientConfig(BaseModel):
 class AuthCredentialsConfig(BaseModel):
     email: str
     password: str
+    otp_secret: Optional[str] = None
 
 
 class Environment(str, Enum):
@@ -39,6 +40,7 @@ class ProjectSettings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         env_nested_delimiter=".",
+        extra="ignore",
     )
 
     profile: Profile = Profile.api
@@ -52,6 +54,11 @@ class APISettings(ProjectSettings):
     auth_credentials_super_admin: Optional[AuthCredentialsConfig] = None
     auth_credentials_admin: Optional[AuthCredentialsConfig] = None
     auth_credentials_user: Optional[AuthCredentialsConfig] = None
+    user_name: Optional[str] = None
+    user_id: Optional[str] = None
+    user_role_id: Optional[str] = None
+    user_base_url: Optional[str] = None
+    org_name: Optional[str] = None
 
     # Org-specific config (вынесено из тестов)
     org_role_id: Optional[str] = None

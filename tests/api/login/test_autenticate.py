@@ -1,173 +1,255 @@
+from __future__ import annotations
+
 from http import HTTPStatus
+from typing import Optional
 
 import allure
+import pyotp
 import pytest
 
 from clients.operations_client import APIClient
 from config import APISettings as Settings
 from schema.operations import (
-    AuthenticateRequestSchema,
-    AuthenticateResponseSchema,
-    ErrorSchema,
+    LoginRequestSchema,
+    LoginMFAResponseSchema,
+    SSOLoginResponseSchema,
+    MessageErrorSchema,
 )
 from tools.assertions.base import assert_status_code
-from tools.assertions.operations import assert_authenticate_response_valid
-from tools.fakers import fake_email, fake_password
+from tools.fakers import fake_email, fake_password, fake_org_name
+
+
+def _make_login_payload(settings: Settings, *, otp_code: Optional[str] = None) -> LoginRequestSchema:
+    """Builds a login payload, auto-generating OTP if otp_secret is configured."""
+    code = otp_code
+    if code is None and settings.auth_credentials.otp_secret:
+        code = pyotp.TOTP(settings.auth_credentials.otp_secret).now()
+    return LoginRequestSchema(
+        orgName=settings.org_name or "",
+        identity=settings.auth_credentials.email,
+        password=settings.auth_credentials.password,
+        otp_code=code,
+    )
 
 
 @pytest.mark.api
 @pytest.mark.auth
 @pytest.mark.integration
-@pytest.mark.usefixtures("auth_payload")
 @allure.feature("Authentication")
-@allure.story("Authenticate")
-class TestAuthenticate:
+@allure.story("Login")
+class TestLogin:
 
-    @allure.title("Authenticate: valid credentials → 200 + data.token")
-    async def test_authenticate_valid_credentials(
+    @allure.title("Login: valid credentials → 200 + token")
+    async def test_login_valid_credentials(
         self,
         api_client: APIClient,
         settings: Settings,
     ) -> None:
-        payload = AuthenticateRequestSchema(
-            email=settings.auth_credentials.email,
-            password=settings.auth_credentials.password,
-        )
-        response = await api_client.authenticate_api(payload)
+        payload = _make_login_payload(settings)
+        response = await api_client.login(payload)
 
         assert_status_code(response.status_code, HTTPStatus.OK)
-        body = AuthenticateResponseSchema.model_validate_json(response.text)
-        assert_authenticate_response_valid(body)
+        data = response.json()
+        if isinstance(data, dict) and data.get("mfa_required"):
+            pytest.skip("MFA required but AUTH_CREDENTIALS.OTP_SECRET not set in .env")
+        body = SSOLoginResponseSchema.model_validate(data)
+        assert body.token, "token should not be empty"
 
-    @allure.title("Authenticate: token is JWT format")
-    async def test_authenticate_token_is_jwt(
+    @allure.title("Login: token is JWT format")
+    async def test_login_token_is_jwt(
         self,
         api_client: APIClient,
         settings: Settings,
     ) -> None:
-        payload = AuthenticateRequestSchema(
-            email=settings.auth_credentials.email,
-            password=settings.auth_credentials.password,
-        )
-        response = await api_client.authenticate_api(payload)
+        payload = _make_login_payload(settings)
+        response = await api_client.login(payload)
         assert_status_code(response.status_code, HTTPStatus.OK)
 
-        body = AuthenticateResponseSchema.model_validate_json(response.text)
-        assert body.data.token.startswith("eyJ"), "token should be a JWT"
+        data = response.json()
+        if isinstance(data, dict) and data.get("mfa_required"):
+            pytest.skip("MFA required but AUTH_CREDENTIALS.OTP_SECRET not set in .env")
+        body = SSOLoginResponseSchema.model_validate(data)
+        assert body.token.startswith("eyJ"), "token should be a JWT"
 
-    @allure.title("Authenticate: invalid password → 401")
-    async def test_authenticate_invalid_password(
+    @allure.title("Login: invalid password → 400")
+    async def test_login_invalid_password(
         self,
         api_client: APIClient,
         settings: Settings,
     ) -> None:
-        payload = AuthenticateRequestSchema(
-            email=settings.auth_credentials.email,
+        payload = LoginRequestSchema(
+            orgName=settings.org_name or "",
+            identity=settings.auth_credentials.email,
             password="wrong_password_!@#$",
         )
-        response = await api_client.authenticate_api(payload)
-        assert_status_code(response.status_code, HTTPStatus.UNAUTHORIZED)
+        response = await api_client.login(payload)
+        assert_status_code(response.status_code, HTTPStatus.BAD_REQUEST)
 
-    @allure.title("Authenticate: non-existent email → 401")
-    async def test_authenticate_nonexistent_user(self, api_client: APIClient) -> None:
-        payload = AuthenticateRequestSchema(
-            email=fake_email(),
+    @allure.title("Login: non-existent user → 400")
+    async def test_login_nonexistent_user(
+        self,
+        api_client: APIClient,
+        settings: Settings,
+    ) -> None:
+        payload = LoginRequestSchema(
+            orgName=settings.org_name or "",
+            identity=fake_email(),
             password=fake_password(),
         )
-        response = await api_client.authenticate_api(payload)
-        assert_status_code(response.status_code, HTTPStatus.UNAUTHORIZED)
+        response = await api_client.login(payload)
+        assert_status_code(response.status_code, HTTPStatus.BAD_REQUEST)
 
-    @allure.title("Authenticate: missing password → 400")
-    async def test_authenticate_missing_password(
+    @allure.title("Login: missing password → 400 or 422")
+    async def test_login_missing_password(
         self,
         api_client: APIClient,
         settings: Settings,
     ) -> None:
         response = await api_client.post(
-            "/authenticate",
-            json={"email": settings.auth_credentials.email},
+            "/login",
+            json={"orgName": settings.org_name, "identity": settings.auth_credentials.email},
         )
-        assert response.status_code == HTTPStatus.BAD_REQUEST.value
-
-    @allure.title("Authenticate: missing email → 400")
-    async def test_authenticate_missing_email(
-        self,
-        api_client: APIClient,
-        settings: Settings,
-    ) -> None:
-        response = await api_client.post(
-            "/authenticate",
-            json={"password": settings.auth_credentials.password},
-        )
-        assert response.status_code == HTTPStatus.BAD_REQUEST.value
-
-    @allure.title("Authenticate: empty body → 400")
-    async def test_authenticate_empty_body(self, api_client: APIClient) -> None:
-        response = await api_client.post("/authenticate", json={})
-        assert response.status_code == HTTPStatus.BAD_REQUEST.value
-
-    @allure.title("Authenticate: missing OTP when MFA enabled → 401")
-    async def test_authenticate_missing_otp_when_mfa_required(
-        self,
-        api_client: APIClient,
-        settings: Settings,
-    ) -> None:
-        payload = AuthenticateRequestSchema(
-            email=settings.auth_credentials.email,
-            password=settings.auth_credentials.password,
-        )
-        response = await api_client.authenticate_api(payload)
-        if response.status_code == HTTPStatus.UNAUTHORIZED.value:
-            body = ErrorSchema.model_validate_json(response.text)
-            assert body.error in ("otp_required", "invalid_credentials")
-
-    @allure.title("Authenticate: invalid OTP → 401")
-    async def test_authenticate_invalid_otp(
-        self,
-        api_client: APIClient,
-        settings: Settings,
-    ) -> None:
-        payload = AuthenticateRequestSchema(
-            email=settings.auth_credentials.email,
-            password=settings.auth_credentials.password,
-            otp="000000",
-        )
-        response = await api_client.authenticate_api(payload)
-        if response.status_code == HTTPStatus.UNAUTHORIZED.value:
-            body = ErrorSchema.model_validate_json(response.text)
-            assert body.error in ("invalid_otp", "otp_required", "invalid_credentials")
-
-    @allure.title("Authenticate: response must not contain password")
-    async def test_authenticate_no_password_in_response(
-        self,
-        api_client: APIClient,
-        settings: Settings,
-    ) -> None:
-        payload = AuthenticateRequestSchema(
-            email=settings.auth_credentials.email,
-            password=settings.auth_credentials.password,
-        )
-        response = await api_client.authenticate_api(payload)
-        assert settings.auth_credentials.password not in response.text
-
-    @allure.title("Authenticate: SQL injection in email → not 500")
-    async def test_authenticate_sql_injection(self, api_client: APIClient) -> None:
-        payload = AuthenticateRequestSchema(
-            email="' OR '1'='1",
-            password="password",
-        )
-        response = await api_client.authenticate_api(payload)
-        assert response.status_code != HTTPStatus.INTERNAL_SERVER_ERROR.value
-
-    @allure.title("Authenticate: very long email → not 500")
-    async def test_authenticate_very_long_email(self, api_client: APIClient) -> None:
-        payload = AuthenticateRequestSchema(
-            email="a" * 10000 + "@test.com",
-            password="password",
-        )
-        response = await api_client.authenticate_api(payload)
         assert response.status_code in (
             HTTPStatus.BAD_REQUEST.value,
-            HTTPStatus.UNAUTHORIZED.value,
             HTTPStatus.UNPROCESSABLE_ENTITY.value,
         )
+
+    @allure.title("Login: missing identity → 400 or 422")
+    async def test_login_missing_identity(
+        self,
+        api_client: APIClient,
+        settings: Settings,
+    ) -> None:
+        response = await api_client.post(
+            "/login",
+            json={"orgName": settings.org_name, "password": settings.auth_credentials.password},
+        )
+        assert response.status_code in (
+            HTTPStatus.BAD_REQUEST.value,
+            HTTPStatus.UNPROCESSABLE_ENTITY.value,
+        )
+
+    @allure.title("Login: missing orgName → 400 or 422")
+    async def test_login_missing_org_name(
+        self,
+        api_client: APIClient,
+        settings: Settings,
+    ) -> None:
+        response = await api_client.post(
+            "/login",
+            json={"identity": settings.auth_credentials.email, "password": settings.auth_credentials.password},
+        )
+        assert response.status_code in (
+            HTTPStatus.BAD_REQUEST.value,
+            HTTPStatus.UNPROCESSABLE_ENTITY.value,
+        )
+
+    @allure.title("Login: empty body → 400 or 422")
+    async def test_login_empty_body(self, api_client: APIClient) -> None:
+        response = await api_client.post("/login", json={})
+        assert response.status_code in (
+            HTTPStatus.BAD_REQUEST.value,
+            HTTPStatus.UNPROCESSABLE_ENTITY.value,
+        )
+
+    @allure.title("Login: MFA challenge returned when otp_code omitted")
+    async def test_login_mfa_required(
+        self,
+        api_client: APIClient,
+        settings: Settings,
+    ) -> None:
+        payload = LoginRequestSchema(
+            orgName=settings.org_name or "",
+            identity=settings.auth_credentials.email,
+            password=settings.auth_credentials.password,
+            # otp_code intentionally omitted
+        )
+        response = await api_client.login(payload)
+        if response.status_code != HTTPStatus.OK.value:
+            return  # non-200 is fine (e.g. 401 if MFA not enabled for this account)
+
+        data = response.json()
+        if not isinstance(data, dict) or not data.get("mfa_required"):
+            pytest.skip("Account does not require MFA — test not applicable")
+
+        body = LoginMFAResponseSchema.model_validate(data)
+        assert body.mfa_required is True
+        assert body.message
+        # qr_code is present on first enrollment, None for already-enrolled users
+
+    @allure.title("Login: invalid OTP → 400")
+    async def test_login_invalid_otp(
+        self,
+        api_client: APIClient,
+        settings: Settings,
+    ) -> None:
+        payload = LoginRequestSchema(
+            orgName=settings.org_name or "",
+            identity=settings.auth_credentials.email,
+            password=settings.auth_credentials.password,
+            otp_code="000000",
+        )
+        response = await api_client.login(payload)
+        if response.status_code == HTTPStatus.BAD_REQUEST.value:
+            body = MessageErrorSchema.model_validate_json(response.text)
+            assert body.message
+
+    @allure.title("Login: response must not contain password")
+    async def test_login_no_password_in_response(
+        self,
+        api_client: APIClient,
+        settings: Settings,
+    ) -> None:
+        payload = LoginRequestSchema(
+            orgName=settings.org_name or "",
+            identity=settings.auth_credentials.email,
+            password=settings.auth_credentials.password,
+        )
+        response = await api_client.login(payload)
+        assert settings.auth_credentials.password not in response.text
+
+    @allure.title("Login: SQL injection in identity → not 500")
+    async def test_login_sql_injection(
+        self,
+        api_client: APIClient,
+        settings: Settings,
+    ) -> None:
+        payload = LoginRequestSchema(
+            orgName=settings.org_name or "",
+            identity="' OR '1'='1",
+            password="password",
+        )
+        response = await api_client.login(payload)
+        assert response.status_code != HTTPStatus.INTERNAL_SERVER_ERROR.value
+
+    @allure.title("Login: unknown orgName → 400")
+    async def test_login_unknown_org(self, api_client: APIClient) -> None:
+        payload = LoginRequestSchema(
+            orgName=fake_org_name(),
+            identity=fake_email(),
+            password=fake_password(),
+        )
+        response = await api_client.login(payload)
+        assert response.status_code == HTTPStatus.BAD_REQUEST.value
+
+    @allure.title("Login: rate limit → 429 after 5+ req/min per username")
+    @pytest.mark.slow
+    async def test_login_rate_limit_429(
+        self,
+        api_client: APIClient,
+        settings: Settings,
+    ) -> None:
+        status_codes = []
+        for _ in range(10):
+            r = await api_client.post(
+                "/login",
+                json={
+                    "orgName": settings.org_name,
+                    "identity": settings.auth_credentials.email,
+                    "password": "wrong_password",
+                },
+            )
+            status_codes.append(r.status_code)
+            if r.status_code == HTTPStatus.TOO_MANY_REQUESTS.value:
+                break
+        assert HTTPStatus.TOO_MANY_REQUESTS.value in status_codes

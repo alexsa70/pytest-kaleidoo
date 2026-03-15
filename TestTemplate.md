@@ -137,6 +137,10 @@ class TestUsers:
         assert isinstance(user.data.name, str)
 ```
 
+Правило для защищенных endpoint:
+- всегда добавляй `auth_token: str` в тест и передавай Bearer token через метод клиента.
+- исключения: тесты самого `/authenticate` и негативные сценарии типа `no token` / `invalid token`.
+
 ---
 
 ## 7. (Опционально) `tests/api/rbac/policy/<domain>.py` — добавь RBAC правило

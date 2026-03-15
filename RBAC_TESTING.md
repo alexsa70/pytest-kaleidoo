@@ -163,6 +163,8 @@ PROFILE=api python -m pytest tests/api/rbac -m "api and integration"
 
 ## 8. Практические правила
 
+- Для защищенных endpoint всегда используй Bearer token.
+- Исключения: тесты endpoint получения токена и негативные проверки `no token` / `invalid token`.
 - Для ownership-сценариев добавляй отдельные правила:
   - `user_own_resource` (доступ разрешен),
   - `user_foreign_resource` (доступ запрещен).

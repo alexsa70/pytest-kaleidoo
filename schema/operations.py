@@ -33,26 +33,21 @@ class ResourceSchema(CreateResourceSchema):
 class ResourcesSchema(RootModel[list[ResourceSchema]]):
     """Контейнер для списка сущностей."""
 
-# ── Authenticate (Login) ───────────────────────────────────────────────────
+# ── Login ──────────────────────────────────────────────────────────────────
 
 
-class AuthenticateRequestSchema(BaseModel):
-    email: str
+class LoginRequestSchema(BaseModel):
+    orgName: str
+    identity: str
     password: str
-    otp: Optional[str] = None
+    otp_code: Optional[str] = None
 
 
-class AuthenticateDataSchema(BaseModel):
-    """Вложенный объект data в ответе /authenticate."""
-    token: str
-    refresh_token: Optional[str] = None
-    expires_in: Optional[int] = None
-
-    model_config = ConfigDict(extra="ignore")
-
-
-class AuthenticateResponseSchema(BaseModel):
-    data: AuthenticateDataSchema
+class LoginMFAResponseSchema(BaseModel):
+    """Ответ когда MFA включён, но otp_code не передан."""
+    message: str
+    mfa_required: bool
+    qr_code: Optional[str] = None
 
     model_config = ConfigDict(extra="ignore")
 
@@ -92,6 +87,38 @@ class SSOLoginResponseSchema(BaseModel):
     refresh_expires_in: int
     user: SSOUserSchema
     org: SSOOrgSchema
+
+    model_config = ConfigDict(extra="ignore")
+
+
+# ── Session Token ──────────────────────────────────────────────────────────
+
+
+class SessionTokenRequestSchema(BaseModel):
+    service: str  # "sse" or "websocket"
+    org_name: Optional[str] = None
+
+
+class SessionTokenResponseSchema(BaseModel):
+    access_token: str
+    refresh_token: str
+    expires_in: int
+    service: str
+    session_client: Optional[str] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class RefreshSessionTokenRequestSchema(BaseModel):
+    refresh_token: str
+    service: str  # "sse", "websocket", or "kal-sense"
+
+
+class RefreshSessionTokenResponseSchema(BaseModel):
+    access_token: str
+    refresh_token: str
+    expires_in: int
+    service: str
 
     model_config = ConfigDict(extra="ignore")
 

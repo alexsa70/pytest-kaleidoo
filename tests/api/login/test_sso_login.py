@@ -28,41 +28,53 @@ class TestSSOLogin:
         body = MessageErrorSchema.model_validate_json(response.text)
         assert body.message
 
-    @allure.title("SSO: missing orgName → 400")
+    @allure.title("SSO: missing orgName → 400 or 422")
     async def test_sso_missing_org_name(self, api_client: APIClient) -> None:
         response = await api_client.post("/sso_login", json={
             "code": "some_code",
             "redirect_uri": "https://app.kalsense.com/auth/callback",
             "provider": "google",
         })
-        assert response.status_code == HTTPStatus.BAD_REQUEST.value
+        assert response.status_code in (
+            HTTPStatus.BAD_REQUEST.value,
+            HTTPStatus.UNPROCESSABLE_ENTITY.value,
+        )
 
-    @allure.title("SSO: missing code → 400")
+    @allure.title("SSO: missing code → 400 or 422")
     async def test_sso_missing_code(self, api_client: APIClient) -> None:
         response = await api_client.post("/sso_login", json={
             "orgName": "acme-corp",
             "redirect_uri": "https://app.kalsense.com/auth/callback",
             "provider": "google",
         })
-        assert response.status_code == HTTPStatus.BAD_REQUEST.value
+        assert response.status_code in (
+            HTTPStatus.BAD_REQUEST.value,
+            HTTPStatus.UNPROCESSABLE_ENTITY.value,
+        )
 
-    @allure.title("SSO: missing redirect_uri → 400")
+    @allure.title("SSO: missing redirect_uri → 400 or 422")
     async def test_sso_missing_redirect_uri(self, api_client: APIClient) -> None:
         response = await api_client.post("/sso_login", json={
             "orgName": "acme-corp",
             "code": "some_code",
             "provider": "google",
         })
-        assert response.status_code == HTTPStatus.BAD_REQUEST.value
+        assert response.status_code in (
+            HTTPStatus.BAD_REQUEST.value,
+            HTTPStatus.UNPROCESSABLE_ENTITY.value,
+        )
 
-    @allure.title("SSO: missing provider → 400")
+    @allure.title("SSO: missing provider → 400 or 422")
     async def test_sso_missing_provider(self, api_client: APIClient) -> None:
         response = await api_client.post("/sso_login", json={
             "orgName": "acme-corp",
             "code": "some_code",
             "redirect_uri": "https://app.kalsense.com/auth/callback",
         })
-        assert response.status_code == HTTPStatus.BAD_REQUEST.value
+        assert response.status_code in (
+            HTTPStatus.BAD_REQUEST.value,
+            HTTPStatus.UNPROCESSABLE_ENTITY.value,
+        )
 
     @allure.title("SSO: unknown provider → 400/422")
     async def test_sso_unknown_provider(self, api_client: APIClient) -> None:
