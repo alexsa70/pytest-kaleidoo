@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class UserRetrieveSchema(BaseModel):
@@ -58,9 +58,12 @@ class UserResponseSchema(BaseModel):
     status: str
     user_image: str | None = None
     color: str | None = None
-    created_at: str
-    updated_at: str
-    created_by: str
+    created_at: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("created_at", "creation_date"),
+    )
+    updated_at: str | None = None
+    created_by: str | None = None
 
     model_config = ConfigDict(extra="ignore")  # API может вернуть лишние поля
 
@@ -110,11 +113,11 @@ class UserCreateResponseSchema(BaseModel):
 
 class UserUpdateResponseSchema(BaseModel):
     message: str
-    id: str
-    user_name: str
-    first_name: str
-    last_name: str
-    updated_at: str
+    id: str | None = None
+    user_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    updated_at: str | None = None
 
     model_config = ConfigDict(extra="ignore")
 

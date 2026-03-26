@@ -1,0 +1,202 @@
+pipeline {
+    agent any
+
+    parameters {
+        booleanParam(name: 'IS_NIGHTLY',     defaultValue: false, description: 'Nightly run')
+        booleanParam(name: 'FORCE_RUN',      defaultValue: false, description: 'Force run all stages')
+        booleanParam(name: 'ENABLE_TESTMO',  defaultValue: false, description: 'Submit results to Testmo')
+        choice(name: 'ENVIRONMENT',
+               choices: ['qa', 'prod', 'onprem'],
+               description: 'Target environment')
+        string(name: 'MARKER',
+               defaultValue: 'integration',
+               description: 'Pytest marker to run (e.g. smoke, regression, integration)')
+    }
+
+    environment {
+        ALLURE_VERSION = '2.34.0'
+        DOCKER_IMAGE   = 'pytest-kaleidoo:latest'
+        CI             = 'true'
+    }
+
+    options {
+        timeout(time: 1, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+
+    stages {
+
+        stage('Extract Git Metadata') {
+            steps {
+                script {
+                    env.GIT_COMMIT_ID      = sh(script: 'git rev-parse HEAD',           returnStdout: true).trim()
+                    env.GIT_BRANCH         = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+                    env.GIT_COMMIT_MESSAGE = sh(script: 'git log -1 --pretty=%s',       returnStdout: true).trim()
+                    env.GIT_AUTHOR         = sh(script: 'git log -1 --pretty=%an',      returnStdout: true).trim()
+                    env.GIT_TIMESTAMP      = sh(script: 'git log -1 --pretty=%ci',      returnStdout: true).trim()
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            when {
+                anyOf {
+                    expression { params.IS_NIGHTLY }
+                    expression { params.FORCE_RUN }
+                    changeset 'requirements.txt'
+                    changeset 'Dockerfile'
+                }
+            }
+            steps {
+                sh "docker build -t ${DOCKER_IMAGE} ."
+            }
+        }
+
+        stage('Lint') {
+            steps {
+                sh """
+                    docker run --rm ${DOCKER_IMAGE} \
+                        flake8 clients/ config/ fixtures/ schema/ tests/ tools/
+                """
+            }
+        }
+
+        stage('Build Testmo Image') {
+            when { expression { params.ENABLE_TESTMO } }
+            steps {
+                sh "docker build -f Dockerfile.testmo -t pytest-kaleidoo-testmo:latest ."
+            }
+        }
+
+        stage('Run API Tests') {
+            steps {
+                script {
+                    def envCredentials = getEnvCredentials(params.ENVIRONMENT)
+
+                    withCredentials(envCredentials) {
+                        sh """
+                            docker run --rm \
+                                -e CI=true \
+                                -e ENVIRONMENT=${params.ENVIRONMENT == 'onprem' ? 'on_premise' : params.ENVIRONMENT} \
+                                -e "API_HTTP_CLIENT.URL=${API_URL}" \
+                                -e "API_HTTP_CLIENT.TIMEOUT=${params.ENVIRONMENT == 'onprem' ? '60' : '30'}" \
+                                -e "ORG_NAME=${ORG_NAME}" \
+                                -e "AUTH_CREDENTIALS_SUPER_ADMIN.EMAIL=${SUPER_ADMIN_EMAIL}" \
+                                -e "AUTH_CREDENTIALS_SUPER_ADMIN.PASSWORD=${SUPER_ADMIN_PASSWORD}" \
+                                -e "AUTH_CREDENTIALS_ADMIN.EMAIL=${ADMIN_EMAIL}" \
+                                -e "AUTH_CREDENTIALS_ADMIN.PASSWORD=${ADMIN_PASSWORD}" \
+                                -e "AUTH_CREDENTIALS_USER.EMAIL=${USER_EMAIL}" \
+                                -e "AUTH_CREDENTIALS_USER.PASSWORD=${USER_PASSWORD}" \
+                                -e "AUTH_CREDENTIALS.EMAIL=${SUPER_ADMIN_EMAIL}" \
+                                -e "AUTH_CREDENTIALS.PASSWORD=${SUPER_ADMIN_PASSWORD}" \
+                                -v \$(pwd)/allure-results:/app/allure-results \
+                                ${DOCKER_IMAGE} \
+                                python -m pytest tests/api/ \
+                                    -m ${params.MARKER} \
+                                    --alluredir=allure-results \
+                                    --junitxml=allure-results/pytest-results.xml \
+                                    --tb=short \
+                                    -q
+                        """
+                    }
+                }
+            }
+            post {
+                always {
+                    sh """
+                        cat > allure-results/environment.properties <<EOF
+ENVIRONMENT=${params.ENVIRONMENT}
+BRANCH=${env.GIT_BRANCH}
+COMMIT_ID=${env.GIT_COMMIT_ID}
+COMMIT_MESSAGE=${env.GIT_COMMIT_MESSAGE}
+JENKINS_BUILD_NUMBER=${env.BUILD_NUMBER}
+JENKINS_BUILD_URL=${env.BUILD_URL}
+JENKINS_JOB_NAME=${env.JOB_NAME}
+GIT_AUTHOR=${env.GIT_AUTHOR}
+GIT_TIMESTAMP=${env.GIT_TIMESTAMP}
+EOF
+                    """
+                }
+            }
+        }
+
+        stage('Publish Allure Report') {
+            steps {
+                allure([
+                    includeProperties: true,
+                    jdk:               '',
+                    properties:        [],
+                    reportBuildPolicy: 'ALWAYS',
+                    results:           [[path: 'allure-results']]
+                ])
+            }
+        }
+
+        stage('Send Nightly Email') {
+            when { expression { params.IS_NIGHTLY } }
+            steps {
+                script {
+                    def status = currentBuild.currentResult
+                    emailext(
+                        subject: "[Nightly] API Tests (${params.ENVIRONMENT}) — ${status} — Build #${env.BUILD_NUMBER}",
+                        body: """
+                            <h2>Nightly API Test Results</h2>
+                            <p><b>Environment:</b> ${params.ENVIRONMENT}</p>
+                            <p><b>Status:</b> ${status}</p>
+                            <p><b>Branch:</b> ${env.GIT_BRANCH}</p>
+                            <p><b>Commit:</b> ${env.GIT_COMMIT_ID}</p>
+                            <p><b>Message:</b> ${env.GIT_COMMIT_MESSAGE}</p>
+                            <p><b>Allure Report:</b> <a href="${env.BUILD_URL}allure">${env.BUILD_URL}allure</a></p>
+                        """,
+                        mimeType: 'text/html',
+                        to: 'shaked.zipori@kaleidoo.ai, Nathan.Shochat@kaleidoo.ai'
+                    )
+                }
+            }
+        }
+
+        stage('Submit to Testmo') {
+            when { expression { params.ENABLE_TESTMO } }
+            steps {
+                withCredentials([string(credentialsId: 'TESTMO_API_KEY', variable: 'TESTMO_API_KEY')]) {
+                    sh """
+                        docker run --rm \
+                            -e TESTMO_API_KEY=${TESTMO_API_KEY} \
+                            -v \$(pwd)/allure-results:/results \
+                            pytest-kaleidoo-testmo:latest \
+                            testmo automation:run:submit \
+                                --instance "https://kaleidoo.testmo.net" \
+                                --project-id 1 \
+                                --name "API Tests — ${params.ENVIRONMENT}" \
+                                --source "api-${params.ENVIRONMENT}" \
+                                --results /results/pytest-results.xml
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+def getEnvCredentials(String environment) {
+    def prefix = environment.toUpperCase()
+    if (environment == 'onprem') prefix = 'ONPREM'
+
+    return [
+        string(credentialsId: "${prefix}_API_URL",             variable: 'API_URL'),
+        string(credentialsId: "${prefix}_ORG_NAME",            variable: 'ORG_NAME'),
+        string(credentialsId: "${prefix}_SUPER_ADMIN_EMAIL",   variable: 'SUPER_ADMIN_EMAIL'),
+        string(credentialsId: "${prefix}_SUPER_ADMIN_PASSWORD",variable: 'SUPER_ADMIN_PASSWORD'),
+        string(credentialsId: "${prefix}_ADMIN_EMAIL",         variable: 'ADMIN_EMAIL'),
+        string(credentialsId: "${prefix}_ADMIN_PASSWORD",      variable: 'ADMIN_PASSWORD'),
+        string(credentialsId: "${prefix}_USER_EMAIL",          variable: 'USER_EMAIL'),
+        string(credentialsId: "${prefix}_USER_PASSWORD",       variable: 'USER_PASSWORD'),
+    ]
+}

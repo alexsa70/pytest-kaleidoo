@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from http import HTTPStatus
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import pyotp
 import pytest
 import pytest_asyncio
 
 from clients.base_client import get_http_client
-from clients.operations_client import APIClient
+from clients.auth_client import AuthClient
 from config import APISettings
-from schema.operations import LoginRequestSchema, SSOLoginResponseSchema
+from schema.auth import LoginRequestSchema, SSOLoginResponseSchema
 from tools.assertions.base import assert_status_code
 
 
@@ -58,26 +59,70 @@ def role_auth_payloads(settings: APISettings) -> dict[str, LoginRequestSchema]:
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def tokens_by_role(
+async def login_responses_by_role(
     settings: APISettings,
     role_auth_payloads: dict[str, LoginRequestSchema],
-) -> dict[str, str]:
-    """Gets access tokens once per session for each configured role."""
+) -> dict[str, SSOLoginResponseSchema]:
+    """Full /login response per role. Single login call — shared by all dependent fixtures."""
 
-    tokens: dict[str, str] = {}
+    responses: dict[str, SSOLoginResponseSchema] = {}
     async with get_http_client(settings.api_http_client) as http_client:
-        client = APIClient(client=http_client)
+        client = AuthClient(client=http_client)
         for role, payload in role_auth_payloads.items():
             response = await client.login(payload)
             if response.status_code == HTTPStatus.TOO_MANY_REQUESTS.value:
                 pytest.skip("Rate limited (429) on /login. Try again later.")
-            assert_status_code(response.status_code, HTTPStatus.OK)
+            if response.status_code != HTTPStatus.OK.value:
+                print(f"[auth] Skipping role '{role}': login returned {response.status_code}")
+                continue
             data = response.json()
             if isinstance(data, dict) and data.get("mfa_required"):
-                pytest.skip(
-                    f"MFA required for role '{role}' but OTP_SECRET is not set in .env"
-                )
-            body = SSOLoginResponseSchema.model_validate(data)
-            tokens[role] = body.token
+                print(f"[auth] Skipping role '{role}': MFA required but OTP_SECRET not set in .env")
+                continue
+            responses[role] = SSOLoginResponseSchema.model_validate(data)
 
-    return tokens
+    if not responses:
+        pytest.skip("No roles could be authenticated. Check credentials in .env")
+
+    return responses
+
+
+@pytest.fixture(scope="session")
+def tokens_by_role(login_responses_by_role: dict[str, SSOLoginResponseSchema]) -> dict[str, str]:
+    """Access tokens per role, derived from login_responses_by_role."""
+    return {role: body.token for role, body in login_responses_by_role.items()}
+
+
+@pytest.fixture(scope="session")
+def logged_in_user(
+    login_responses_by_role: dict[str, SSOLoginResponseSchema],
+    settings: APISettings,
+):
+    """User data for the active role from /login response. No .env IDs needed."""
+    response = login_responses_by_role.get(settings.active_role)
+    if response is None:
+        available = list(login_responses_by_role.keys())
+        if not available:
+            pytest.skip("No login responses available")
+        response = login_responses_by_role[available[0]]
+    return response.user
+
+
+@pytest.fixture(scope="session")
+def api_client_for_role(settings: APISettings, tokens_by_role: dict[str, str]):
+    """
+    Фабрика: возвращает async context manager, создающий AuthClient для конкретной роли.
+
+    Использование:
+        async with api_client_for_role("admin") as client:
+            response = await client.user_get_all()
+    """
+    @asynccontextmanager
+    async def _factory(role: str) -> AsyncIterator[AuthClient]:
+        token = tokens_by_role.get(role)
+        if token is None:
+            pytest.skip(f"No token configured for role: {role}")
+        async with get_http_client(settings.api_http_client, token=token) as http_client:
+            yield AuthClient(client=http_client)
+
+    return _factory

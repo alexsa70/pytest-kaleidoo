@@ -1,25 +1,23 @@
-# Секреты                                                                                                                                                    
-  .env                                                                                                                                                         
-                                                                                                                                                               
-  # Python                   
-  __pycache__/                                                                                                                                                 
-  *.pyc                                                     
-  *.pyo                                                                                                                                                        
-  .venv/                                                                                                                                                       
-  venv/                                                                                                                                                        
-                                                                                                                                                               
-  # Pytest                                                                                                                                                     
-  .pytest_cache/
+# Secrets
+.env
 
-  # Allure
-  allure-results/
-  allure-report/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
 
-  # IDE
-  .idea/
-  .vscode/
+# Pytest
+.pytest_cache/
 
-  # Node (faker)
-node_modules/
-
+# Allure
 allure-results/
+allure-report/
+
+# IDE
+.idea/
+.vscode/
+
+# Node
+node_modules/

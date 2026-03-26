@@ -24,8 +24,10 @@ class AuthCredentialsConfig(BaseModel):
 
 class Environment(str, Enum):
     local = "local"
+    qa = "qa"
     staging = "staging"
     prod = "prod"
+    on_premise = "on_premise"
 
 
 class Profile(str, Enum):
@@ -62,6 +64,9 @@ class APISettings(ProjectSettings):
 
     # Org-specific config (вынесено из тестов)
     org_role_id: Optional[str] = None
+
+    # Активная роль для запуска тестов. Переопределяется через ACTIVE_ROLE=admin pytest ...
+    active_role: Literal["super_admin", "admin", "user"] = "admin"
 
 
 class E2ESettings(ProjectSettings):

@@ -52,15 +52,21 @@ class BaseClient:
                     yield line[len("data:"):].strip()
 
 
-def get_http_client(config: HTTPClientConfig) -> AsyncClient:
+def get_http_client(config: HTTPClientConfig, token: str | None = None) -> AsyncClient:
     """
     Создаёт экземпляр AsyncClient.
+    token — если передан, добавляется как Bearer во все запросы клиента.
     Используй как async context manager в фикстурах:
-        async with get_http_client(config) as client: ...
+        async with get_http_client(config, token=token) as client: ...
     """
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     return AsyncClient(
         timeout=config.timeout,
         base_url=config.client_url,
+        headers=headers,
         event_hooks={
             "request": [log_request_event_hook],
             "response": [log_response_event_hook]
