@@ -20,6 +20,10 @@ def _decode_jwt_payload(token: str) -> dict:
     payload_b64 += "=" * (padding % 4)
     return json.loads(base64.urlsafe_b64decode(payload_b64))
 
+def _require_auth_credentials(settings: Settings) -> None:
+    if settings.auth_credentials is None:
+        pytest.skip("AUTH_CREDENTIALS не настроены в .env")
+
 
 @pytest.mark.api
 @pytest.mark.auth
@@ -34,8 +38,7 @@ class TestLoginTokenValidation:
         api_client_no_auth: AuthClient,
         settings: Settings,
     ) -> None:
-        if settings.auth_credentials is None:
-            pytest.skip("AUTH_CREDENTIALS не настроены в .env")
+        _require_auth_credentials(settings)
 
         payload = LoginRequestSchema(
             orgName=settings.org_name or "",
@@ -58,8 +61,7 @@ class TestLoginTokenValidation:
         api_client_no_auth: AuthClient,
         settings: Settings,
     ) -> None:
-        if settings.auth_credentials is None:
-            pytest.skip("AUTH_CREDENTIALS не настроены в .env")
+        _require_auth_credentials(settings) 
 
         payload = LoginRequestSchema(
             orgName=settings.org_name or "",
