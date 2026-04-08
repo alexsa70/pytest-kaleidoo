@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import mimetypes
+from pathlib import Path
 from typing import Optional
 
 import allure
@@ -16,12 +18,13 @@ class ManualLoaderClient(BaseClient):
     @allure.step("ManualLoader: upload file")
     async def upload_manual_file(
         self,
-        file_content: bytes,
-        filename: str,
-        content_type: str = "application/octet-stream",
+        file_path: str,
+        content_type: Optional[str] = None,
         folder_id: Optional[str] = None,
     ) -> Response:
-        files = {"file": (filename, file_content, content_type)}
+        path = Path(file_path)
+        resolved_content_type = content_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        files = {"file": (path.name, path.read_bytes(), resolved_content_type)}
         data = {}
         if folder_id:
             data["folder_id"] = folder_id
