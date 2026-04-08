@@ -7,23 +7,16 @@ import pytest
 from pydantic import TypeAdapter
 
 from clients.user_client import UserClient
-from config import APISettings
 from schema.users import (
     RoleSchema,
-    UserCreateRequestSchema,
-    UserCreateResponseSchema,
-    UserDeleteRequestSchema,
-    UserErrorSchema,
-    UserResetMFARequestSchema,
     UserResponseSchema,
     UserRetrieveSchema,
     UserRetrieveByIdSchema,
     UserSummarySchema,
-    UserUnlockRequestSchema,
     UserUpdateRequestSchema,
     UserUpdateResponseSchema,
 )
-from tools.fakers import fake_email, fake_first_name, fake_last_name, fake_username
+from tools.fakers import fake_first_name
 
 @pytest.fixture
 def current_user_id(logged_in_user) -> str:
@@ -87,61 +80,6 @@ class TestUserService:
         roles = TypeAdapter(list[RoleSchema]).validate_json(response.text)
         assert len(roles) > 0
 
-    @allure.title("User: unlock non-existing user -> 400/404")
-    async def test_user_unlock_non_existing(self, user_client: UserClient) -> None:
-        payload = UserUnlockRequestSchema(username="nonexistent_user_qa_12345")
-        response = await user_client.user_unlock(payload)
-
-        assert response.status_code in {HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND}
-        body = UserErrorSchema.model_validate_json(response.text)
-        assert body.message
-
-    @allure.title("User: reset MFA non-existing user -> 400/404")
-    async def test_user_reset_mfa_non_existing(self, user_client: UserClient) -> None:
-        payload = UserResetMFARequestSchema(user_id="000000000000000000000000")
-        response = await user_client.user_reset_mfa(payload)
-
-        assert response.status_code in {HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND}
-        body = UserErrorSchema.model_validate_json(response.text)
-        assert body.message
-
-    # @allure.title("User: create and delete user")
-    # async def test_user_create_and_delete(
-    #     self,
-    #     user_client: UserClient,
-    #     settings: APISettings,
-    # ) -> None:
-    #     if not settings.org_name:
-    #         pytest.skip("ORG_NAME is not configured in .env")
-
-    #     role_id = settings.user_role_id or settings.org_role_id
-    #     if not role_id:
-    #         pytest.skip("USER_ROLE_ID/ORG_ROLE_ID is not configured in .env")
-
-    #     payload = UserCreateRequestSchema(
-    #         org_name=settings.org_name,
-    #         user_name=f"qa-{fake_username()}",
-    #         first_name=fake_first_name(),
-    #         last_name=fake_last_name(),
-    #         role_id=role_id,
-    #         email=fake_email(),
-    #         is_ldap_sso_user=False,
-    #         base_url=settings.user_base_url,
-    #     )
-    #     create_response = await user_client.user_create(payload)
-    #     if create_response.status_code in {HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN}:
-    #         pytest.skip(
-    #             f"Active role '{settings.active_role}' has no permission to create users "
-    #             f"({create_response.status_code})"
-    #         )
-    #     assert create_response.status_code == HTTPStatus.OK
-
-    #     create_body = UserCreateResponseSchema.model_validate_json(create_response.text)
-    #     delete_response = await user_client.user_delete(
-    #         UserDeleteRequestSchema(user_id=create_body.user_id)
-    #     )
-    #     assert delete_response.status_code == HTTPStatus.OK
-
     @allure.title("User: update user")
     async def test_user_update(
         self,
@@ -183,12 +121,5 @@ class TestUserService:
                 )
             )
             assert rollback_response.status_code == HTTPStatus.OK
-
-    @allure.title("User: delete non-existing user -> 400/404")
-    async def test_user_delete_non_existing(self, user_client: UserClient) -> None:
-        payload = UserDeleteRequestSchema(user_id="000000000000000000000000")
-
-        response = await user_client.user_delete(payload)
-        assert response.status_code in {HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND}
 
     

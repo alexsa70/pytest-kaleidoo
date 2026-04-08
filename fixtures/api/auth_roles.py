@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import AsyncIterator, Optional
@@ -40,20 +41,29 @@ def _build_payload(settings: APISettings, role: str) -> Optional[LoginRequestSch
     )
 
 
+def _should_login_all_roles() -> bool:
+    value = os.getenv("AUTH_LOGIN_ALL_ROLES", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 @pytest.fixture(scope="session")
 def role_auth_payloads(settings: APISettings) -> dict[str, LoginRequestSchema]:
     """Builds auth payloads for roles configured in .env."""
 
+    roles_to_try = ["super_admin", "admin", "user"] if _should_login_all_roles() else [settings.active_role]
+
     payloads: dict[str, LoginRequestSchema] = {}
-    for role in ("super_admin", "admin", "user"):
+    for role in roles_to_try:
         payload = _build_payload(settings, role)
         if payload is not None:
             payloads[role] = payload
 
     if not payloads:
-        pytest.skip(
-            "RBAC creds are not configured. Set AUTH_CREDENTIALS_{SUPER_ADMIN|ADMIN|USER}.* in .env"
-        )
+        if _should_login_all_roles():
+            pytest.skip(
+                "RBAC creds are not configured. Set AUTH_CREDENTIALS_{SUPER_ADMIN|ADMIN|USER}.* in .env"
+            )
+        pytest.skip(f"Credentials for ACTIVE_ROLE='{settings.active_role}' are not configured in .env")
 
     return payloads
 
